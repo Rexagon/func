@@ -326,7 +326,7 @@ impl<'input> Lexer<'input> {
 
         Ok((
             start,
-            Token::StringLiteral(&self.input[start + 1..=end]),
+            Token::StringLiteral(&self.input[start + 1..=end - 1]),
             end + 1,
         ))
     }
@@ -413,7 +413,7 @@ impl<'input> Iterator for Lexer<'input> {
                     // "->"
                     Some((_, '>')) => {
                         self.chars.next();
-                        (i, Token::Forall, i + 2)
+                        (i, Token::MapsTo, i + 2)
                     }
                     // "-"
                     _ => (i, Token::Sub, i + 1),
@@ -445,10 +445,10 @@ impl<'input> Iterator for Lexer<'input> {
                     // "%="
                     Some((_, '=')) => {
                         self.chars.next();
-                        (i, Token::Mod, i + 2)
+                        (i, Token::ModLet, i + 2)
                     }
                     // "%"
-                    _ => (i, Token::Div, i + 1),
+                    _ => (i, Token::Mod, i + 1),
                 },
                 (i, '?') => (i, Token::Question, i + 1),
                 (i, ':') => (i, Token::Colon, i + 1),
@@ -470,21 +470,26 @@ impl<'input> Iterator for Lexer<'input> {
                     // "{-" (comment begin)
                     Some((_, '-')) => {
                         self.chars.next();
-                        let mut seen_minus = false;
-                        loop {
-                            if let Some((_, ch)) = self.chars.next() {
-                                if seen_minus && ch == '}' {
+                        let mut level = 1;
+                        while let Some((_, ch)) = self.chars.next() {
+                            if ch == ';' && matches!(self.chars.peek(), Some((_, ';'))) {
+                                while !matches!(self.chars.next(), Some((_, '\n' | '\r')) | None) {}
+                            } else if ch == '{' && matches!(self.chars.peek(), Some((_, '-'))) {
+                                self.chars.next();
+                                level += 1;
+                            } else if ch == '-' && matches!(self.chars.peek(), Some((_, '}'))) {
+                                self.chars.next();
+                                level -= 1;
+                                if level == 0 {
                                     continue 'chars;
                                 }
-                                seen_minus = ch == '-';
-                            } else {
-                                return Some(Err(LexicalError::EndOfFileInComment(Loc::File(
-                                    self.file_no,
-                                    i,
-                                    self.input.len(),
-                                ))));
                             }
                         }
+                        return Some(Err(LexicalError::EndOfFileInComment(Loc::File(
+                            self.file_no,
+                            i,
+                            self.input.len(),
+                        ))));
                     }
                     // "{"
                     _ => (i, Token::OpenBrace, i + 1),
@@ -685,21 +690,28 @@ impl<'input> Iterator for Lexer<'input> {
                 (i, '"') => return Some(self.string(i)),
                 (i, ch) if ch.is_ascii_digit() => return Some(self.parse_number(i, ch)),
                 (i, _) => {
-                    let mut end = i;
-                    while let Some((i, ch)) = self.chars.peek() {
-                        if !matches!(ch, ';' | ',' | '(' | ')' | '~' | '.') && !ch.is_whitespace() {
-                            end = *i;
+                    #[inline(always)]
+                    fn is_ident_char(ch: &char) -> bool {
+                        matches!(ch, ';' | ',' | '(' | ')' | '~' | '.') || ch.is_whitespace()
+                    }
+
+                    let end = loop {
+                        if let Some((i, ch)) = self.chars.peek() {
+                            if is_ident_char(ch) {
+                                break *i;
+                            }
                             self.chars.next();
                         } else {
-                            break;
+                            break self.input.len();
                         }
-                    }
-                    let ident = &self.input[i..=end];
+                    };
+
+                    let ident = &self.input[i..end];
                     let token = KEYWORDS
                         .get(ident)
                         .cloned()
                         .unwrap_or(Token::Identifier(ident));
-                    (i, token, end + 1)
+                    (i, token, end)
                 }
             };
         };
@@ -829,6 +841,118 @@ mod tests {
         include_str!("../test/w8.fc"),
         include_str!("../test/w9.fc"),
     ];
+
+    #[test]
+    fn all_single_tokens_are_correct() {
+        fn token(s: &str, len: usize, token: Token<'_>) {
+            let mut lexer = Lexer::new(s, 0);
+            let parsed = lexer.next().unwrap();
+            assert_eq!(parsed, Ok((0, token, len)));
+            assert_eq!(lexer.next(), None);
+        }
+
+        token("test1", 5, Token::Identifier("test1"));
+        token("test1'", 6, Token::Identifier("test1'"));
+        token("こんにちは世界", 21, Token::Identifier("こんにちは世界"));
+        token("`strange ident`", 15, Token::Identifier("`strange ident`"));
+        token("\"hello world\"", 13, Token::StringLiteral("hello world"));
+        token("\"hello\nworld\"", 13, Token::StringLiteral("hello\nworld"));
+        token("\"こんにち\"", 14, Token::StringLiteral("こんにち"));
+        token("123", 3, Token::Number("123"));
+        token("0xdeadbeef123", 13, Token::HexNumber("deadbeef123"));
+
+        token("+", 1, Token::Add);
+        token("-", 1, Token::Sub);
+        token("*", 1, Token::Mul);
+        token("/", 1, Token::Div);
+        token("%", 1, Token::Mod);
+        token("?", 1, Token::Question);
+        token(":", 1, Token::Colon);
+        token(",", 1, Token::Comma);
+        token(";", 1, Token::Semi);
+        token("(", 1, Token::OpenParen);
+        token(")", 1, Token::CloseParen);
+        token("[", 1, Token::OpenBracket);
+        token("]", 1, Token::CloseBracket);
+        token("{", 1, Token::OpenBrace);
+        token("}", 1, Token::CloseBrace);
+        token("=", 1, Token::Let);
+        token("<", 1, Token::Lt);
+        token(">", 1, Token::Gt);
+        token("&", 1, Token::And);
+        token("|", 1, Token::Or);
+        token("^", 1, Token::Xor);
+        token("~", 1, Token::Tilde);
+        token(".", 1, Token::Dot);
+
+        token("==", 2, Token::Eq);
+        token("!=", 2, Token::Neq);
+        token("<=", 2, Token::Leq);
+        token(">=", 2, Token::Geq);
+        token("<=>", 3, Token::Spaceship);
+        token("<<", 2, Token::LShift);
+        token(">>", 2, Token::RShift);
+        token("~>>", 3, Token::RShiftR);
+        token("^>>", 3, Token::RShiftC);
+        token("~/", 2, Token::DivR);
+        token("^/", 2, Token::DivC);
+        token("~%", 2, Token::ModR);
+        token("^%", 2, Token::ModC);
+        token("/%", 2, Token::DivMod);
+        token("+=", 2, Token::AddLet);
+        token("-=", 2, Token::SubLet);
+        token("*=", 2, Token::MulLet);
+        token("/=", 2, Token::DivLet);
+        token("~/=", 3, Token::DivRLet);
+        token("^/=", 3, Token::DivCLet);
+        token("%=", 2, Token::ModLet);
+        token("~%=", 3, Token::ModRLet);
+        token("^%=", 3, Token::ModCLet);
+        token("<<=", 3, Token::LShiftLet);
+        token(">>=", 3, Token::RShiftLet);
+        token("~>>=", 4, Token::RShiftRLet);
+        token("^>>=", 4, Token::RShiftCLet);
+        token("&=", 2, Token::AndLet);
+        token("|=", 2, Token::OrLet);
+        token("^=", 2, Token::XorLet);
+
+        token("_", 1, Token::Hole);
+        token("return", 6, Token::Return);
+        token("var", 3, Token::Var);
+        token("repeat", 6, Token::Repeat);
+        token("do", 2, Token::Do);
+        token("while", 5, Token::While);
+        token("until", 5, Token::Until);
+        token("if", 2, Token::If);
+        token("ifnot", 5, Token::IfNot);
+        token("then", 4, Token::Then);
+        token("else", 4, Token::Else);
+        token("elseif", 6, Token::ElseIf);
+        token("elseifnot", 9, Token::ElseIfNot);
+
+        token("int", 3, Token::Int);
+        token("cell", 4, Token::Cell);
+        token("slice", 5, Token::Slice);
+        token("builder", 7, Token::Builder);
+        token("cont", 4, Token::Cont);
+        token("tuple", 5, Token::Tuple);
+        token("type", 4, Token::Type);
+        token("->", 2, Token::MapsTo);
+        token("forall", 6, Token::Forall);
+
+        token("extern", 6, Token::Extern);
+        token("global", 6, Token::Global);
+        token("asm", 3, Token::Asm);
+        token("impure", 6, Token::Impure);
+        token("inline", 6, Token::Inline);
+        token("inline_ref", 10, Token::InlineRef);
+        token("auto_apply", 10, Token::AutoApply);
+        token("method_id", 9, Token::MethodId);
+        token("operator", 8, Token::Operator);
+        token("infix", 5, Token::Infix);
+        token("infixl", 6, Token::InfixL);
+        token("infixr", 6, Token::InfixR);
+    }
 
     #[test]
     fn correct_examples() {
