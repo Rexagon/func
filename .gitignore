@@ -1,0 +1,5 @@
+/.idea
+/target
+
+# Generated
+/func-parser/src/func.rs

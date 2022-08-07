@@ -1,0 +1,261 @@
+use super::lexer::{Token, LexicalError};
+use super::pt::*;
+
+grammar<'input>(input: &'input str, file_no: usize);
+
+pub Expr: Expr = {
+    Precedence10,
+}
+
+Precedence10: Expr = {
+    <a:@L> <l:Precedence13> "=" <r:Precedence10> <b:@R> => Expr::Assign(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence13> "+=" <r:Precedence10> <b:@R> => Expr::AssignAdd(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence13> "-=" <r:Precedence10> <b:@R> => Expr::AssignSub(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence13> "*=" <r:Precedence10> <b:@R> => Expr::AssignMul(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence13> "/=" <r:Precedence10> <b:@R> => Expr::AssignDiv(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Floor),
+    <a:@L> <l:Precedence13> "~/=" <r:Precedence10> <b:@R> => Expr::AssignDiv(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::NearestInteger),
+    <a:@L> <l:Precedence13> "^/=" <r:Precedence10> <b:@R> => Expr::AssignDiv(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Ceiling),
+    <a:@L> <l:Precedence13> "%=" <r:Precedence10> <b:@R> => Expr::AssignMod(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Floor),
+    <a:@L> <l:Precedence13> "~%=" <r:Precedence10> <b:@R> => Expr::AssignMod(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::NearestInteger),
+    <a:@L> <l:Precedence13> "^%=" <r:Precedence10> <b:@R> => Expr::AssignMod(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Ceiling),
+    <a:@L> <l:Precedence13> "<<=" <r:Precedence10> <b:@R> => Expr::AssignLShift(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence13> ">>=" <r:Precedence10> <b:@R> => Expr::AssignRShift(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Floor),
+    <a:@L> <l:Precedence13> "~>>=" <r:Precedence10> <b:@R> => Expr::AssignRShift(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::NearestInteger),
+    <a:@L> <l:Precedence13> "^>>=" <r:Precedence10> <b:@R> => Expr::AssignRShift(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Ceiling),
+    <a:@L> <l:Precedence13> "&=" <r:Precedence10> <b:@R> => Expr::AssignAnd(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence13> "|=" <r:Precedence10> <b:@R> => Expr::AssignOr(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence13> "^=" <r:Precedence10> <b:@R> => Expr::AssignXor(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    Precedence13
+}
+
+
+Precedence13: Expr = {
+    <a:@L> <c:Precedence15> "?" <l:Expr> ":" <r:Precedence13> <b:@R> => Expr::Ternary(Loc::File(file_no, a, b), Box::new(c), Box::new(l), Box::new(r)),
+    Precedence15
+}
+
+Precedence15: Expr = {
+    <a:@L> <l:Precedence15> "==" <r:Precedence17> <b:@R> => Expr::Eq(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence15> "<" <r:Precedence17> <b:@R> => Expr::Lt(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence15> ">" <r:Precedence17> <b:@R> => Expr::Gt(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence15> "<=" <r:Precedence17> <b:@R> => Expr::Leq(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence15> ">=" <r:Precedence17> <b:@R> => Expr::Geq(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence15> "!=" <r:Precedence17> <b:@R> => Expr::Neq(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence15> "<=>" <r:Precedence17> <b:@R> => Expr::Compare(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    Precedence17
+}
+
+Precedence17: Expr = {
+    <a:@L> <l:Precedence17> "<<" <r:Precedence20> <b:@R> => Expr::LShift(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence17> ">>" <r:Precedence20> <b:@R> => Expr::RShift(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Floor),
+    <a:@L> <l:Precedence17> "~>>" <r:Precedence20> <b:@R> => Expr::RShift(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::NearestInteger),
+    <a:@L> <l:Precedence17> "^>>" <r:Precedence20> <b:@R> => Expr::RShift(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Ceiling),
+    Precedence20
+}
+
+Precedence20: Expr = {
+    <a:@L> "-" <e:Precedence30> <b:@R> => Expr::UnaryMinus(Loc::File(file_no, a, b), Box::new(e)),
+    <a:@L> <l:Precedence20> "+" <r:Precedence30> <b:@R> => Expr::Add(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence20> "-" <r:Precedence30> <b:@R> => Expr::Sub(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence20> "|" <r:Precedence30> <b:@R> => Expr::Or(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence20> "^" <r:Precedence30> <b:@R> => Expr::Xor(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    Precedence30
+}
+
+Precedence30: Expr = {
+    <a:@L> <l:Precedence30> "*" <r:Precedence75> <b:@R> => Expr::Mul(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence30> "/" <r:Precedence75> <b:@R> => Expr::Div(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Floor),
+    <a:@L> <l:Precedence30> "~/" <r:Precedence75> <b:@R> => Expr::Div(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::NearestInteger),
+    <a:@L> <l:Precedence30> "^/" <r:Precedence75> <b:@R> => Expr::Div(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Ceiling),
+    <a:@L> <l:Precedence30> "%" <r:Precedence75> <b:@R> => Expr::Mod(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Floor),
+    <a:@L> <l:Precedence30> "~%" <r:Precedence75> <b:@R> => Expr::Mod(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::NearestInteger),
+    <a:@L> <l:Precedence30> "^%" <r:Precedence75> <b:@R> => Expr::Mod(Loc::File(file_no, a, b), Box::new(l), Box::new(r), RoundingMode::Ceiling),
+    <a:@L> <l:Precedence30> "/%" <r:Precedence75> <b:@R> => Expr::DivMod(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    <a:@L> <l:Precedence30> "&" <r:Precedence75> <b:@R> => Expr::And(Loc::File(file_no, a, b), Box::new(l), Box::new(r)),
+    Precedence75,
+}
+
+Precedence75: Expr = {
+    <a:@L> "~" <e:Precedence80> <b:@R> => Expr::Complement(Loc::File(file_no, a, b), Box::new(e)),
+    Precedence80
+}
+
+Precedence80: Expr = {
+    <a:@L> <e:Precedence80> "." "(" <args:Comma<Expr>> ")" <b:@R> => Expr::MethodCall(Loc::File(file_no, a, b), e, args, MethodCallMode::Simple),
+    <a:@L> <e:Precedence80> "~" "(" <args:Comma<Expr>> ")" <b:@R> => Expr::MethodCall(Loc::File(file_no, a, b), e, args, MethodCallMode::Modifying),
+    Precedence90
+}
+
+Precedence90: Expr = {
+    <a:@L> <f:identifier> "(" <args:Comma<Expr>> ")" <b:@R> => Expr::FunctionCall(Loc::File(file_no, a, b), f.to_string(), args),
+    Precedence100,
+}
+
+Precedence100: Expr = {
+    PrimitiveType => Expr::Type(<>),
+    "(" ")" => Expr::Tensor(Loc::File(file_no, a, b), Vec::new()),
+    "(" <Expr> ")",
+    <a:@L> <e:identifier> <b:@R> => Expr::Identifier(Loc::File(file_no, a, b), e.to_string()),
+    <a:@L> <e:string> <b:@R> => Expr::StringLiteral(Loc::File(file_no, a, b), e.to_string()),
+    <a:@L> <e:number> <b:@R> => Expr::NumberLiteral(Loc::File(file_no, a, b), e.to_string()),
+    <a:@L> <e:hexnumber> <b:@R> => Expr::HexNumberLiteral(Loc::File(file_no, a, b), e.to_string()),
+    <a:@L> "(" <e:CommaTwo<Expr>> ")" <b:@R> => Expr::Tensor(Loc::File(file_no, a, b), e),
+    <a:@L> "[" <e:Comma<Expr>> "]" <b:@R> => Expr::Tuple(Loc::File(file_no, a, b), e),
+}
+
+//TypeExpression: TypeExpr = <TypeExpressionInner> => Expr::Type(<>);
+//TypeExpressionInner: Expr = {
+//    PrimitiveType,
+//    VarType,
+//    <a:@L> "(" ")"  <b:@R> => Type::Tensor(Loc::File(file_no, a, b), Vec::new()),
+//    "(" <TypeExpressionInner> ")",
+//    <a:@L> "(" CommaTwo<TypeExpressionInner> ")" <b:@R> => Type::Tensor(Loc::File(file_no, a, b), <>),
+//    TupleType,
+//}
+
+//AtomicType: TypeExpr = {
+//    <a:@L> PrimitiveType <b:@R> => ,
+//    VarType,
+//    HoleType,
+//    TensorType,
+//    TupleType,
+//    TypeIdentifier,
+//}
+PrimitiveType: Type = {
+    "int" => PrimitiveType::Int,
+    "cell" => PrimitiveType::Cell,
+    "slice" => PrimitiveType::Slice,
+    "builder" => PrimitiveType::Builder,
+    "cont" => PrimitiveType::Cont,
+    "tuple" => PrimitiveType::Tuple,
+}
+//VarType: Type = <a:@L> "var" <b:@R> => Type::Var(Loc::File(file_no, a, b));
+//HoleType: Type = <a:@L> "_" <b:@R> => Type::Hole(Loc::File(file_no, a, b));
+//TensorType: Type = <a:@L> "(" Comma<Type> ")" <b:@R> => Type::Tensor(Loc::File(file_no, a, b), <>);
+//TupleType: Type = <a:@L> "[" Comma<Type> "]" <b:@R> => Tupe::Tuple(Loc::File(file_no, a, b), <>);
+//TypeIdentifier: Type = <a:@L> number <b:@R> => Type::Ident(Loc::File(file_no, a, b), <>);
+//
+//FunctionType: Type = <a:@L> <args:AtomicType> "->" <res:AtomicType> <b:@R> => Type::Function(Loc::File(file_no, a, b), Box::new(args), Box::new(res));
+
+
+Comma<T>: Vec<T> = {
+    => Vec::new(),
+    CommaOne<T>,
+};
+
+CommaOne<T>: Vec<T> = {
+    <e:T> <mut v:("," <T>)*> => {
+        v.insert(0, e);
+        v
+    }
+};
+
+CommaTwo<T>: Vec<T> = {
+    <e:T> <v:("," <T>)+> => {
+        let mut v = v;
+        v.insert(0, e);
+        v
+    }
+};
+
+extern {
+    type Location = usize;
+    type Error = LexicalError;
+
+    enum Token<'input> {
+        identifier => Token::Identifier(<&'input str>),
+        string => Token::StringLiteral(<&'input str>),
+        number => Token::Number(<&'input str>),
+        hexnumber => Token::HexNumber(<&'input str>),
+
+        "+" => Token::Add,
+        "-" => Token::Sub,
+        "*" => Token::Mul,
+        "/" => Token::Div,
+        "%" => Token::Mod,
+        "?" => Token::Question,
+        ":" => Token::Colon,
+        "," => Token::Comma,
+        ";" => Token::Semi,
+        "(" => Token::OpenParen,
+        ")" => Token::CloseParen,
+        "[" => Token::OpenBracket,
+        "]" => Token::CloseBracket,
+        "{" => Token::OpenBrace,
+        "}" => Token::CloseBrace,
+        "=" => Token::Let,
+        "<" => Token::Lt,
+        ">" => Token::Gt,
+        "&" => Token::And,
+        "|" => Token::Or,
+        "^" => Token::Xor,
+        "~" => Token::Tilde,
+        "." => Token::Dot,
+
+        "==" => Token::Eq,
+        "!=" => Token::Neq,
+        "<=" => Token::Leq,
+        ">=" => Token::Geq,
+        "<=>" => Token::Spaceship,
+        "<<" => Token::LShift,
+        ">>" => Token::RShift,
+        "~>>" => Token::RShiftR,
+        "^>>" => Token::RShiftC,
+        "~/" => Token::DivR,
+        "^/" => Token::DivC,
+        "~%" => Token::ModR,
+        "^%" => Token::ModC,
+        "/%" => Token::DivMod,
+        "+=" => Token::AddLet,
+        "-=" => Token::SubLet,
+        "*=" => Token::MulLet,
+        "/=" => Token::DivLet,
+        "~/=" => Token::DivRLet,
+        "^/=" => Token::DivCLet,
+        "%=" => Token::ModLet,
+        "~%=" => Token::ModRLet,
+        "^%=" => Token::ModCLet,
+        "<<=" => Token::LShiftLet,
+        ">>=" => Token::RShiftLet,
+        "~>>=" => Token::RShiftRLet,
+        "^>>=" => Token::RShiftCLet,
+        "&=" => Token::AndLet,
+        "|=" => Token::OrLet,
+        "^=" => Token::XorLet,
+
+        "_" => Token::Hole,
+        "return" => Token::Return,
+        "var" => Token::Var,
+        "repeat" => Token::Repeat,
+        "do" => Token::Do,
+        "while" => Token::While,
+        "until" => Token::Until,
+        "if" => Token::If,
+        "ifnot" => Token::IfNot,
+        "then" => Token::Then,
+        "else" => Token::Else,
+        "elseif" => Token::ElseIf,
+        "elseifnot" => Token::ElseIfNot,
+        "int" => Token::Int,
+        "cell" => Token::Cell,
+        "slice" => Token::Slice,
+        "builder" => Token::Builder,
+        "cont" => Token::Cont,
+        "tuple" => Token::Tuple,
+        "type" => Token::Type,
+        "->" => Token::MapsTo,
+        "forall" => Token::Forall,
+        "extern" => Token::Extern,
+        "global" => Token::Global,
+        "asm" => Token::Asm,
+        "impure" => Token::Impure,
+        "inline" => Token::Inline,
+        "inline_ref" => Token::InlineRef,
+        "auto_apply" => Token::AutoApply,
+        "method_id" => Token::MethodId,
+        "operator" => Token::Operator,
+        "infix" => Token::Infix,
+        "infixl" => Token::InfixL,
+        "infixr" => Token::InfixR,
+    }
+}
